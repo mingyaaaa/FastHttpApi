@@ -1,0 +1,319 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <link href="bootstrap.css" rel="stylesheet" />
+    <link href="bootstrap-theme.css" rel="stylesheet" />
+    <script src="jquery.js"></script>
+    <script src="vue.js"></script>
+    <script src="ModuleLoader.js"></script>
+    <script src="FastHttpApi.js"></script>
+    <script src="AdminController.js"></script>
+    <script src="bootstrap.js"></script>
+    <script src="md5.js"></script>
+    <script src="Monitor.js"></script>
+    <title>FastHttpApi Service Management</title>
+    <style>
+        .values {
+            min-width: 80px;
+        }
+
+        .pline {
+            border-bottom: solid;
+            border-bottom-width: 1px;
+            border-bottom-color: darkgray;
+        }
+
+        .valueLabel {
+            display: inline-block;
+            min-width: 150px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container" slot="header">
+
+        </div>
+    </div>
+    <div class="container bs-docs-container" style="padding-top:60px;">
+        <div slot="mainBar">
+        </div>
+        <div class="row" style="padding-top:4px;">
+            <div class="col-sm-7 col-md-7">
+
+                <div class="panel panel-default">
+                    <div class="panel-heading">Server Status</div>
+                    <div class="panel-body">
+
+                        <div id="serverStatus">
+                            <p class="pline"><span class="valueLabel">ServerName:</span> <label class="values"> <span class="badge ">{{Data.ServerName}}</span></label></p>
+
+                            <p class="pline">
+                                <span class="valueLabel">Host:</span>  <label class="values">
+                                    <span class="badge ">{{Data.Host}}@{{Data.Port}}</span>
+                                </label>
+                                <span class="valueLabel">RunTime:</span><span class="badge ">{{Data.RunTime}}</span>
+                            </p>
+                            <p class="pline">
+                                <span class="valueLabel">CPU:</span>  <label class="values">
+                                    <span class="badge ">{{Data.Cpu}}%</span>
+                                </label>
+                                <span class="valueLabel">Memory:</span><span class="badge ">{{Data.Memory}}KB</span>
+                            </p>
+                            <p class="pline">
+                                <span class="valueLabel">Total Connections:</span>  <label class="values">
+                                    <span class="badge ">{{Data.TotalConnections}}</span>
+                                </label>
+                                <span class="valueLabel">Live:</span> <span class="badge ">{{Data.CurrentConnectinos}}</span>
+                                <span class="valueLabel">Accept:</span> <span class="badge ">{{Data.ConnectionsPer}}/s</span>
+                            </p>
+                            <p class="pline">
+                                <span class="valueLabel">Request:</span>
+                                <label class="values">
+                                    <span class="badge "> {{Data.RequestPer}}/s</span>
+                                </label>
+                                <span class="valueLabel">Total Request:</span>
+                                <span class="badge ">{{Data.TotalRequest}}</span>
+                            </p>
+                            <p class="pline">
+                                <span class="valueLabel">ReceiveBytes:</span>
+                                <label class="values">
+                                    <span class="badge ">{{Data.ReceiveBytesPer}}MB/s</span>
+                                </label>
+                                <span class="valueLabel">Total ReceiveBytes:</span>
+                                <span class="badge ">{{Data.TotalReceiveBytes}}MB</span>
+                            </p>
+                            <p>
+                            <p>
+                                <span class="valueLabel">SendBytes:</span>
+                                <label class="values">
+                                    <span class="badge ">{{Data.SendBytesPer}}MB/s</span>
+                                </label>
+                                <span class="valueLabel">Total SendBytes:</span>
+                                <span class="badge ">{{Data.TotalSendBytes}}MB</span>
+                            </p>
+
+                        </div>
+                    </div>
+
+                    <div class="panel-body" style="height:100px;padding:1px;">
+                        <canvas width="600" height="100" id="cpuCanavas" style="width:100%;height:100%;"></canvas>
+                    </div>
+
+                    <div class="panel-body" style="height:100px;padding:1px;">
+                        <canvas width="600" height="100" id="requestCanvas" style="width:100%;height:100%;"></canvas>
+                    </div>
+
+                    <div class="panel-body" style="height:100px;padding:1px;">
+                        <canvas width="600" height="100" id="networkCanvas" style="width:100%;height:100%;"></canvas>
+                    </div>
+                </div>
+
+
+            </div>
+            <div class="col-sm-6 col-md-5">
+
+                <div class="panel panel-default">
+                    <div class="panel-heading">Setting</div>
+                    <div class="panel-body">
+                        <form class="form-horizontal" id="setting" style="font-size:14px;">
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Body max length</label>
+                                <div class="col-sm-5">
+                                    <input type="number" v-model:value="MaxLength" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Max Conn</label>
+                                <div class="col-sm-5">
+                                    <input type="number" v-model:value="MaxConn" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Websocket RPS</label>
+                                <div class="col-sm-5">
+                                    <input type="number" v-model:value="WSMaxRPS" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">LogLevel</label>
+                                <div class="col-sm-5">
+                                    <select v-model:value="LogLevel" class="form-control">
+                                        <option value="All">All</option>
+                                        <option value="Trace">Trace</option>
+                                        <option value="Debug">Debug</option>
+                                        <option value="Info">Info</option>
+                                        <option value="Warring">Warring</option>
+                                        <option value="Error">Error</option>
+                                        <option value="Fatal">Fatal</option>
+                                        <option value="Off">Off</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Log save to file</label>
+                                <div class="col-sm-5">
+                                    <input type="checkbox" v-model:value="WriteLog" class="checkbox">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Displsy to console</label>
+                                <div class="col-sm-5">
+                                    <input type="checkbox" v-model:value="LogToConsole" class="checkbox">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">File manage</label>
+                                <div class="col-sm-5">
+                                    <input type="checkbox" v-model:value="FileManage" class="checkbox">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Extension types</label>
+                                <div class="col-sm-5">
+                                    <textarea v-model:value="Exts" class="form-control" rows="5"></textarea>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="col-sm-5 control-label">Default pages</label>
+                                <div class="col-sm-5">
+                                    <input type="text" v-model:value="DefaultPages" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <div class="col-sm-offset-2 col-sm-10">
+                                    <button type="button" onclick="UpSetting()" class="btn btn-default">submit</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+        <br />
+        <br />
+        <br />
+        <br />
+    </div>
+
+    <div class="navbar navbar-inverse navbar-fixed-bottom">
+        <div class="container" style="color:aliceblue;text-align:center;" slot="footer">
+        </div>
+    </div>
+    <script>
+        var statusControl;
+        var settingControl;
+        var lstLogControl;
+        var logs = new Array();
+        var cpuMonitor;
+        var cpu;
+        var requestMonitor;
+        var request;
+        var networkMonitor;
+        var netInput;
+        var netOutput;
+
+        var setting = {
+            MaxConn: 0,
+            WSMaxRPS: 0,
+            LogLevel: '',
+            LogToConsole: true,
+            WriteLog: false,
+            FileManage: false,
+            Exts: '',
+            DefaultPages: '',
+            MaxLength: 1024 * 1024
+        }
+        api_receive(function (data) {
+            if (data.Data.LogType) {
+                logs.splice(0, 0, data.Data);
+                if (logs.length > 500)
+                    logs.pop();
+
+            }
+        });
+        $(document).ready(function () {
+            statusControl = new Vue({ el: '#serverStatus', data: { Data: {} } });
+            settingControl = new Vue({ el: '#setting', data: setting });
+            lstLogControl = new Vue({ el: '#lstLog', data: { Data: logs } });
+            cpuMonitor = new Monitor('cpuCanavas');
+            cpu = cpuMonitor.create();
+            cpu.label = "Cpu";
+            requestMonitor = new Monitor('requestCanvas');
+            request = requestMonitor.create();
+            request.maxValue = 5000;
+            request.changeMaxValue = true;
+            request.label = "Request";
+
+            networkMonitor = new Monitor('networkCanvas');
+            netInput = networkMonitor.create();
+            netInput.maxValue = 10;
+            netInput.label = "Network Input(MB)";
+
+            netOutput = networkMonitor.create();
+            netOutput.maxValue = 10;
+            netOutput.label = "Network Output(MB)";
+
+            GetStatus();
+            GetSettingInfo();
+            setInterval(GetStatus, 1000);
+
+        });
+        async function LogConnect() {
+            var result = await _AdminLogConnect();
+            if (result.Code == 403)
+                window.location.href = result.Data;
+        }
+        async function LogDisConnect() {
+            var result = await _AdminLogDisConnect();
+            if (result.Code == 403)
+                window.location.href = result.Data;
+        }
+
+        async function GetSettingInfo() {
+            var result = await _AdminGetSettingInfo();
+            if (result.Code == 403)
+                window.location.href = result.Data;
+            setting.MaxConn = result.Data.MaxConn;
+            setting.WSMaxRPS = result.Data.WSMaxRPS;
+            setting.LogLevel = result.Data.LogLevel;
+            setting.LogToConsole = result.Data.LogToConsole;
+            setting.WriteLog = result.Data.WriteLog;
+            setting.Exts = result.Data.Exts;
+            setting.DefaultPages = result.Data.DefaultPages;
+            setting.MaxLength = result.Data.MaxLength;
+            setting.FileManage = result.Data.FileManage;
+        }
+
+        async function UpSetting() {
+            if (confirm('do you want to change the settings？')) {
+                var result = await _AdminSetting(setting);
+                if (result.Code == 403)
+                    window.location.href = result.Data;
+                if (result.Code == 200)
+                    alert('succeed!');
+            }
+        }
+        async function GetStatus() {
+            var result = await _AdminGetServerInfo();
+            if (result.Code == 403)
+                window.location.href = result.Data;
+            statusControl.Data = result.Data;
+            cpu.push(result.Data.Cpu);
+            cpuMonitor.draw();
+            request.push(result.Data.RequestPer);
+            requestMonitor.draw();
+
+            netInput.push(result.Data.ReceiveBytesPer);
+            netOutput.push(result.Data.SendBytesPer);
+            networkMonitor.draw();
+        }
+    </script>
+
+</body>
+</html>

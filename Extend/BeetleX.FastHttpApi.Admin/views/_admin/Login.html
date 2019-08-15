@@ -1,0 +1,71 @@
+﻿<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="utf-8" />
+    <link href="bootstrap.css" rel="stylesheet" />
+    <link href="bootstrap-theme.css" rel="stylesheet" />
+    <script src="jquery.js"></script>
+    <script src="vue.js"></script>
+    <script src="ModuleLoader.js"></script>
+    <script src="FastHttpApi.js"></script>
+    <script src="AdminController.js"></script>
+    <script src="bootstrap.js"></script>
+    <script src="md5.js"></script>
+    <title>FastHttpApi Service Management</title>
+</head>
+<body>
+    <div class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container" slot="header">
+
+        </div>
+    </div>
+    <div class="container bs-docs-container" style="padding-top:10px;">
+        <div class="row">
+
+            <div class="panel panel-default" style="margin:auto;width:400px;">
+                <div class="panel-heading">sign</div>
+                <div class="panel-body">
+                    <form>
+                        <div class="form-group">
+                            <label for="exampleInputEmail1">Name</label>
+                            <input type="email" class="form-control" id="name" placeholder="admin">
+                        </div>
+                        <div class="form-group">
+                            <label for="exampleInputPassword1">Password</label>
+                            <input type="password" class="form-control" id="pwd" placeholder="123456">
+                        </div>
+                        <button type="button" onclick="login()" class="btn btn-default">submit</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        var key;
+        $(document).ready(function () {
+            GetKey();
+        });
+        async function GetKey() {
+            var result = await _AdminGetKey(true);
+            key = result.Data;
+        }
+        async function login() {
+            var name = md5($('#name').val());
+            var pwd = md5($('#pwd').val() + key);
+            var result = await _AdminLogin(name, pwd, true);
+            if (result.Data == true) {
+                window.location.href = 'index.html';
+            }
+            else {
+                alert('Invalid user name or password！');
+            }
+        }
+
+    </script>
+    <div class="navbar navbar-inverse navbar-fixed-bottom">
+        <div class="container" style="color:aliceblue;text-align:center;" slot="footer">
+        </div>
+    </div>
+</body>
+
+</html>

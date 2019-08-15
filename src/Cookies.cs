@@ -16,6 +16,11 @@ namespace BeetleX.FastHttpApi
             }
         }
 
+        public void Clear()
+        {
+            mItems.Clear();
+        }
+
         private string GetValue(string name)
         {
             string result = null;
@@ -27,7 +32,16 @@ namespace BeetleX.FastHttpApi
         {
             name = System.Web.HttpUtility.UrlDecode(name);
             value = System.Web.HttpUtility.UrlDecode(value);
-            mItems.Add(name, value);
+            mItems[name] = value;
+        }
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            foreach (var item in mItems)
+            {
+                sb.AppendFormat("{0}={1}\r\n", item.Key, item.Value);
+            }
+            return sb.ToString();
         }
     }
 }

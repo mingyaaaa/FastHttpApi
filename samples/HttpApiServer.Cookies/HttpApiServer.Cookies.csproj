@@ -9,24 +9,43 @@
     <None Remove="views\css\bootstrap.css" />
     <None Remove="views\css\bootstrap.min.css" />
     <None Remove="views\index.html" />
+    <None Remove="views\js\api.js" />
     <None Remove="views\js\bootstrap.bundle.js" />
     <None Remove="views\js\bootstrap.bundle.min.js" />
     <None Remove="views\js\bootstrap.js" />
     <None Remove="views\js\bootstrap.min.js" />
+    <None Remove="views\js\FastHttpApi.js" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="views\css\bootstrap.css" />
     <EmbeddedResource Include="views\css\bootstrap.min.css" />
     <EmbeddedResource Include="views\index.html" />
+    <EmbeddedResource Include="views\js\api.js" />
     <EmbeddedResource Include="views\js\bootstrap.bundle.js" />
     <EmbeddedResource Include="views\js\bootstrap.bundle.min.js" />
     <EmbeddedResource Include="views\js\bootstrap.js" />
     <EmbeddedResource Include="views\js\bootstrap.min.js" />
+    <EmbeddedResource Include="views\js\FastHttpApi.js" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\BeetleX.FastHttpApi.csproj" />
+    <PackageReference Include="BeetleX.FastHttpApi" Version="1.4.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Program.cs">
+      <Generator>JSAPI</Generator>
+      <LastGenOutput>Program.js</LastGenOutput>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Program.js">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Program.cs</DependentUpon>
+    </None>
   </ItemGroup>
 
 </Project>

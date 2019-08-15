@@ -1,0 +1,160 @@
+﻿<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <link href="bootstrap.css" rel="stylesheet" />
+    <link href="bootstrap-theme.css" rel="stylesheet" />
+    <script src="jquery.js"></script>
+    <script src="vue.js"></script>
+    <script src="ModuleLoader.js"></script>
+    <script src="FastHttpApi.js"></script>
+    <script src="AdminController.js"></script>
+    <script src="bootstrap.js"></script>
+    <script src="md5.js"></script>
+    <title>FastHttpApi Service Management</title>
+</head>
+<body>
+    <div class="navbar navbar-inverse navbar-fixed-top">
+        <div class="container" slot="header">
+
+        </div>
+    </div>
+    <div class="container bs-docs-container" style="padding-top:60px;">
+        <div class="row">
+            <div slot="mainBar">
+            </div>
+
+            <form class="bs-example btn-group-sm" data-example-id="btn-tags" style="padding:4px;">
+                <button type="button" class="btn btn-success" onclick="searchConn(0)">search</button>
+                <button type="button" class="btn btn-danger" onclick="disconnect()">close</button>
+                <span id="connections" class="badge"></span>
+            </form>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width:40px;"><input type="checkbox" onclick="selectAll(this)" /></th>
+                        <th style="width:120px;">IPAddress</th>
+                        <th style="width:120px;">Type</th>
+                        <th style="width:120px;">ID</th>
+                        <th>Name</th>
+                        <th>Live Time</th>
+                    </tr>
+                </thead>
+                <tbody id="lstConnection">
+                    <tr v-for="item in Data">
+                        <td><input type="checkbox" v-bind:id="item.ID" v-bind:ip="item.IPAddress" /></td>
+                        <td>{{item.IPAddress}}</td>
+                        <td>{{item.Type}}</td>
+                        <td>{{item.ID}}</td>
+                        <td>{{item.Name}}</td>
+                        <td>{{item.CreateTime}}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <nav aria-label="Page navigation">
+                <ul id="pagination" class="pagination"></ul>
+            </nav>
+        </div>
+    </div>
+    <br />
+    <br />
+    <br />
+    <br />
+    <div class="navbar navbar-inverse navbar-fixed-bottom">
+        <div class="container" style="color:aliceblue;text-align:center;" slot="footer">
+        </div>
+    </div>
+
+    <script>
+
+
+        function selectAll(e) {
+            var checkedOfAll = $(e).prop("checked");
+            $("input[type='checkbox']").prop("checked", checkedOfAll);
+        }
+
+        function getSelectItems() {
+            var items = new Array();
+            $("input[type='checkbox']").each(function () {
+                if ($(this).prop("checked") == true && $(this).prop("id"))
+                    items.push({ ID: $(this).attr('id'), IP: $(this).attr('IP') });
+            });
+            return items;
+        }
+
+        async function disconnect() {
+            var items = getSelectItems();
+            if (items.length > 0) {
+                if (confirm('close the connections?')) {
+                    var url = "/_admin/CloseSession";
+                    var sessions = getSelectItems();
+                    if (sessions.length > 0) {
+                        var result = await _AdminCloseSession(sessions, true);
+                        if (result.Code == 200) {
+                            searchConn(0);
+                        }
+                        else {
+                            alert(result.Error);
+                        }
+                    }
+                }
+            }
+        }
+        var lstConnectionControl;
+        $(document).ready(function () {
+            lstConnectionControl = new Vue({ el: '#lstConnection', data: { Data: [] } });
+            searchConn(0);
+        });
+
+
+        async function searchConn(index) {
+            var result = await _AdminListConnection(index);
+            if (result.Code == 403) {
+                window.location.href = result.Data;
+                return;
+            }
+            lstConnectionControl.Data = result.Data.Items;
+            pagination(index, result.Data.Pages);
+        }
+
+        function pagination(index, pages) {
+            $('#pagination').empty();
+            if (pages < 10) {
+                for (i = 0; i < pages; i++) {
+                    var item = '<li><a page="' + i + '" href="javascript:void(0)" onclick="searchConn(' + i + ')">' + (i + 1) + '</a></li>'
+                    $('#pagination').append(item);
+                }
+            }
+            else {
+                var item = '<li><a page="' + 0 + '" href="javascript:void(0)" onclick="searchConn(0)">1</a></li>'
+                $('#pagination').append(item);
+
+
+                for (i = index - 5; i < index + 1; i++) {
+                    if (i > 0 && i < pages - 1) {
+                        var item = '<li><a page="' + i + '" href="javascript:void(0)" onclick="searchConn(' + i + ')">' + (i + 1) + '</a></li>'
+                        $('#pagination').append(item);
+                    }
+                }
+
+
+                for (i = index + 1; i < index + 5; i++) {
+                    if (i < (pages - 1)) {
+                        var item = '<li><a page="' + i + '" href="javascript:void(0)" onclick="searchConn(' + i + ')">' + (i + 1) + '</a></li>'
+                        $('#pagination').append(item);
+                    }
+                }
+                if (pages > 1) {
+                    var item = '<li><a page="' + (pages - 1) + '" href="javascript:void(0)" onclick="searchConn(' + (pages - 1) + ')">' + (pages) + '</a></li>'
+                    $('#pagination').append(item);
+                }
+            }
+            $('a').each(function () {
+                if ($(this).attr('page') == index) {
+                    $(this).html('<span class="badge">' + (index + 1) + '</span>')
+                }
+            })
+        }
+    </script>
+</body>
+</html>

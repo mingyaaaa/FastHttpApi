@@ -10,7 +10,6 @@ namespace HttpApiServer.Cookies
         static void Main(string[] args)
         {
             mApiServer = new BeetleX.FastHttpApi.HttpApiServer();
-            mApiServer.ServerConfig.BodySerializer = new JsonBodySerializer();
             mApiServer.Register(typeof(Program).Assembly);
             mApiServer.Debug();
             mApiServer.Open();
@@ -20,18 +19,21 @@ namespace HttpApiServer.Cookies
     }
 
     [Controller]
-    public class Test
+    public class Home
     {
-        public bool setCookie(string name, string value, HttpResponse response)
+        public bool setCookie(string name, string value, IHttpContext context)
         {
-            response.SetCookie(name, value);
+
+            context.Response.SetCookie(name, value);
             return true;
         }
 
-        public string getCookie(string name, HttpRequest request, HttpResponse response)
+        public string getCookie(string name, HttpRequest request, IHttpContext context)
         {
-            string value = request.Cookies[name];
+            string value = context.Request.Cookies[name];
             return value;
         }
+
+
     }
 }

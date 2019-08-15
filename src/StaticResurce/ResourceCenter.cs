@@ -6,24 +6,53 @@ using System.Text;
 
 namespace BeetleX.FastHttpApi.StaticResurce
 {
-    class ResourceCenter
+    public class ResourceCenter
     {
         public ResourceCenter(HttpApiServer server)
         {
             Server = server;
-            Path = Server.ServerConfig.StaticResourcePath;
+            Path = Server.Options.StaticResourcePath;
             if (Path[Path.Length - 1] != System.IO.Path.DirectorySeparatorChar)
             {
                 Path += System.IO.Path.DirectorySeparatorChar;
             }
 
-            foreach (string item in server.ServerConfig.StaticResurceType.ToLower().Split(';'))
+            foreach (string item in server.Options.StaticResurceType.ToLower().Split(';'))
             {
                 FileContentType fct = new FileContentType(item);
                 mExts[fct.Ext] = fct;
             }
-            mDefaultPages.AddRange(Server.ServerConfig.DefaultPage.Split(";"));
+            mDefaultPages.AddRange(Server.Options.DefaultPage.Split(";"));
 
+        }
+
+        public void AddDefaultPage(string file)
+        {
+            if (!string.IsNullOrEmpty(file))
+                mDefaultPages.Add(file);
+        }
+
+        public void SetDefaultPages(string files)
+        {
+            if (files != null)
+            {
+                Server.Options.DefaultPage = files;
+                mDefaultPages.Clear();
+                mDefaultPages.AddRange(files.Split(";"));
+            }
+        }
+
+        public void SetFileExts(string exts)
+        {
+            if (exts != null)
+            {
+                Server.Options.StaticResurceType = exts;
+                foreach (string item in exts.ToLower().Split(';'))
+                {
+                    FileContentType fct = new FileContentType(item);
+                    mExts[fct.Ext] = fct;
+                }
+            }
         }
 
         private ConcurrentDictionary<string, FileResource> mResources = new ConcurrentDictionary<string, FileResource>();
@@ -34,9 +63,35 @@ namespace BeetleX.FastHttpApi.StaticResurce
 
         private List<string> mDefaultPages = new List<string>();
 
+        public List<string> DefaultPages => mDefaultPages;
+
+        public ConcurrentDictionary<string, FileContentType> Exts => mExts;
+
         public HttpApiServer Server { get; private set; }
 
         public string Path { get; internal set; }
+
+        public event EventHandler<EventFindFileArgs> Find;
+
+        public event EventHandler<EventFileResponseArgs> FileResponse;
+
+        public class EventFindFileArgs : System.EventArgs
+        {
+            public string File { get; set; }
+
+            public HttpRequest Request { get; internal set; }
+
+            public string Url { get; internal set; }
+        }
+
+        public class EventFileResponseArgs : System.EventArgs
+        {
+            public HttpRequest Request { get; internal set; }
+
+            public HttpResponse Response { get; internal set; }
+
+            public FileResource Resource { get; set; }
+        }
 
         public bool Debug { get; set; }
 
@@ -53,7 +108,10 @@ namespace BeetleX.FastHttpApi.StaticResurce
             {
                 charname[indexs[i]] = '/';
             }
-            return HttpParse.CharToLower(charname);
+            if (Server.Options.UrlIgnoreCase)
+                return HttpParse.CharToLower(charname);
+            else
+                return new string(charname);
         }
 
         private void SaveTempFile(System.Reflection.Assembly assembly, string recname, string filename)
@@ -97,24 +155,30 @@ namespace BeetleX.FastHttpApi.StaticResurce
                         string filename = tmpFolder + System.IO.Path.DirectorySeparatorChar + item;
                         SaveTempFile(assembly, item, filename);
                         FileResource fr;
+                        bool nogzip = !(Server?.Options.NoGzipFiles.IndexOf(ext) >= 0);
+                        bool cachefile = Server?.Options.CacheFiles.IndexOf(ext) >= 0;
                         if (Debug)
                         {
-                            fr = new NoGzipResource(filename, urlname);
+                            fr = new NoCacheResource(filename, urlname);
+                            if (nogzip)
+                                fr.GZIP = true;
                         }
                         else
                         {
-                            if ("jpg;jpeg;png;gif;png".IndexOf(ext) >= 0)
+                            if (cachefile)
                             {
-                                fr = new NoGzipResource(filename, urlname);
+                                fr = new FileResource(filename, urlname);
                             }
                             else
                             {
-                                fr = new FileResource(filename, urlname);
+                                fr = new NoCacheResource(filename, urlname);
+                                if (nogzip)
+                                    fr.GZIP = true;
                             }
                         }
                         mResources[urlname] = fr;
                         fr.Load();
-                        Server.BaseServer.Log(EventArgs.LogType.Info, null, "load static resource " + urlname);
+                        Server?.BaseServer?.Log(EventArgs.LogType.Info, null, "load static resource " + urlname);
                     }
                 }
             }
@@ -122,6 +186,7 @@ namespace BeetleX.FastHttpApi.StaticResurce
 
         public void Load()
         {
+
             if (System.IO.Directory.Exists(Path))
             {
                 LoadFolder(Path);
@@ -134,7 +199,7 @@ namespace BeetleX.FastHttpApi.StaticResurce
                         fsw.IncludeSubdirectories = true;
                         fsw.Changed += (o, e) =>
                         {
-                            CreateResource(e.FullPath);
+                            CreateResource(e.FullPath, true);
                         };
                         fsw.EnableRaisingEvents = true;
                         mFileWatch.Add(fsw);
@@ -149,39 +214,60 @@ namespace BeetleX.FastHttpApi.StaticResurce
         {
             if (!Debug)
             {
-                if (response.Request.IfNoneMatch == fr.FileMD5)
+                string IfNoneMatch = response.Request.IfNoneMatch;
+                if (!string.IsNullOrEmpty(IfNoneMatch) && IfNoneMatch == fr.FileMD5)
                 {
-                    response.NoModify();
+                    if (Server.EnableLog(EventArgs.LogType.Info))
+                        Server.BaseServer.Log(EventArgs.LogType.Info, null, "{0} get {1} source no modify ", response.Request.RemoteIPAddress, response.Request.Url);
+                    if (Server.Options.StaticResurceCacheTime > 0)
+                    {
+                        response.Header.Add(HeaderTypeFactory.CACHE_CONTROL, "public, max-age=" + Server.Options.StaticResurceCacheTime);
+                    }
+                    NoModifyResult result = new NoModifyResult();
+                    response.Result(result);
                     return;
                 }
             }
-
             if (fr.GZIP)
             {
                 SetGZIP(response);
             }
             if (!Debug)
             {
-                if (fr.Cached)
+                if (!string.IsNullOrEmpty(fr.FileMD5))
                 {
-                    response.Header.Add(HeaderType.CACHE_CONTROL, "private, max-age=31536000");
+                    response.Header.Add(HeaderTypeFactory.ETAG, fr.FileMD5);
+                    if (Server.Options.StaticResurceCacheTime > 0)
+                    {
+                        response.Header.Add(HeaderTypeFactory.CACHE_CONTROL, "public, max-age=" + Server.Options.StaticResurceCacheTime);
+                    }
                 }
-                else
-                {
-                    response.Header.Add(HeaderType.ETAG, fr.FileMD5);
-                }
+
             }
             SetChunked(response);
+            EventFileResponseArgs efra = new EventFileResponseArgs();
+            efra.Request = response.Request;
+            efra.Response = response;
+            efra.Resource = fr;
+            FileResponse?.Invoke(this, efra);
+            if (Server.EnableLog(EventArgs.LogType.Info))
+            {
+                Server.BaseServer.Log(EventArgs.LogType.Info, response.Request.Session, "{0} get {1} response gzip {2}",
+                    response.Request.RemoteIPAddress, response.Request.BaseUrl, fr.GZIP);
+            }
             HttpToken token = (HttpToken)response.Session.Tag;
-            token.File = new FileBlock(fr);
+            token.File = fr.CreateFileBlock();
             response.SetContentType(fct.ContentType);
             response.Result(token.File);
+
         }
 
-        public void ProcessFile(HttpRequest reqeust, HttpResponse response)
+        public void ProcessFile(HttpRequest request, HttpResponse response)
         {
-            string url = HttpParse.CharToLower(reqeust.BaseUrl);
-            if (url == "/")
+            string url = request.BaseUrl;
+            if (Server.Options.UrlIgnoreCase)
+                url = HttpParse.CharToLower(request.BaseUrl);
+            if (url[url.Length - 1] == '/')
             {
                 for (int i = 0; i < mDefaultPages.Count; i++)
                 {
@@ -199,14 +285,20 @@ namespace BeetleX.FastHttpApi.StaticResurce
                         return;
                     }
                 }
-                response.NotFound();
-                Server.BaseServer.Log(EventArgs.LogType.Warring, reqeust.Session, "{0} not found", reqeust.BaseUrl);
+                if (Server.EnableLog(EventArgs.LogType.Warring))
+                    Server.BaseServer.Log(EventArgs.LogType.Warring, request.Session, "{0} get {1} file not found", request.RemoteIPAddress, request.BaseUrl);
+                if (!Server.OnHttpRequesNotfound(request, response).Cancel)
+                {
+                    NotFoundResult notFound = new NotFoundResult("{0} file not found", request.Url);
+                    response.Result(notFound);
+                }
                 return;
             }
 
-            if (ExtSupport(reqeust.Ext))
+            if (ExtSupport(request.Ext))
             {
-                FileContentType fct = mExts[reqeust.Ext];
+                url = System.Net.WebUtility.UrlDecode(url);
+                FileContentType fct = mExts[request.Ext];
                 FileResource fr = GetFileResource(url);
                 if (fr != null)
                 {
@@ -214,26 +306,38 @@ namespace BeetleX.FastHttpApi.StaticResurce
                 }
                 else
                 {
-                    if (ExistsFile(reqeust.BaseUrl))
+                    string file;
+                    string fileurl = HttpParse.GetBaseUrl(request.Url);
+                    fileurl = System.Net.WebUtility.UrlDecode(fileurl);
+                    if (ExistsFile(request, fileurl, out file))
                     {
-                        string file = GetFile(url);
-                        fr = CreateResource(file);
+                        fr = CreateResource(file, false);
                         if (fr != null)
                         {
+
                             OutputFileResource(fct, fr, response);
                         }
                     }
                     else
                     {
-                        response.NotFound();
-                        Server.BaseServer.Log(EventArgs.LogType.Warring, reqeust.Session, "{0} not found", reqeust.BaseUrl);
+                        if (Server.EnableLog(EventArgs.LogType.Warring))
+                            Server.BaseServer.Log(EventArgs.LogType.Warring, request.Session, "{0} get {1} file not found", request.RemoteIPAddress, request.BaseUrl);
+                        if (!Server.OnHttpRequesNotfound(request, response).Cancel)
+                        {
+                            NotFoundResult notFound = new NotFoundResult("{0} file not found", request.Url);
+                            response.Result(notFound);
+                        }
+
                     }
                 }
             }
             else
             {
-                response.NotSupport();
-                Server.BaseServer.Log(EventArgs.LogType.Warring, reqeust.Session, "{0} not support", reqeust.BaseUrl);
+
+                if (Server.EnableLog(EventArgs.LogType.Warring))
+                    Server.BaseServer.Log(EventArgs.LogType.Warring, request.Session, "{0} get {1} file ext not support", request.RemoteIPAddress, request.BaseUrl);
+                NotSupportResult notSupport = new NotSupportResult("get {0} file {1} ext not support", request.Url, request.Ext);
+                response.Result(notSupport);
             }
         }
 
@@ -244,7 +348,9 @@ namespace BeetleX.FastHttpApi.StaticResurce
 
         private void SetChunked(HttpResponse response)
         {
+
             response.Header.Add("Transfer-Encoding", "chunked");
+
         }
 
         public bool ExtSupport(string ext)
@@ -260,22 +366,32 @@ namespace BeetleX.FastHttpApi.StaticResurce
             return result;
         }
 
-        public bool ExistsFile(string url)
+        public bool ExistsFile(HttpRequest request, string url, out string file)
         {
-            string file = GetFile(url);
-            return System.IO.File.Exists(file);
+
+            file = GetFile(request, url);
+            bool has = System.IO.File.Exists(file);
+            return has;
         }
 
-        public string GetFile(string url)
+        public string GetFile(HttpRequest request, string url)
         {
-            if (Path[Path.Length - 1] == System.IO.Path.DirectorySeparatorChar)
+            EventFindFileArgs e = new EventFindFileArgs();
+            e.Request = request;
+            e.Url = url;
+            Find?.Invoke(this, e);
+            if (string.IsNullOrEmpty(e.File))
             {
-                return Path + url.Substring(1, url.Length - 1);
+                if (Path[Path.Length - 1] == System.IO.Path.DirectorySeparatorChar)
+                {
+                    return Path + url.Substring(1, url.Length - 1);
+                }
+                else
+                {
+                    return Path + url.Replace('/', System.IO.Path.DirectorySeparatorChar);
+                }
             }
-            else
-            {
-                return Path + url;
-            }
+            return e.File;
         }
 
         public string GetUrl(string file)
@@ -296,13 +412,16 @@ namespace BeetleX.FastHttpApi.StaticResurce
                 }
                 else
                 {
-                    charbuffer[i + offset] = Char.ToLower(filebuffer[i]);
+                    if (Server.Options.UrlIgnoreCase)
+                        charbuffer[i + offset] = Char.ToLower(filebuffer[i]);
+                    else
+                        charbuffer[i + offset] = filebuffer[i];
                 }
             }
             return new string(charbuffer, 0, filebuffer.Length + offset);
         }
 
-        private FileResource CreateResource(string file)
+        private FileResource CreateResource(string file, bool cache)
         {
             try
             {
@@ -310,41 +429,58 @@ namespace BeetleX.FastHttpApi.StaticResurce
                 ext = ext.Substring(1, ext.Length - 1);
                 if (mExts.ContainsKey(ext))
                 {
-                    string urlname = GetUrl(file);
                     FileResource fr;
-                    if (!Debug)
+                    string urlname = "";
+                    urlname = GetUrl(file);
+                    if (cache)
                     {
-                        if (mResources.TryGetValue(urlname, out fr))
+
+                        if (!Debug)
                         {
-                            if (Server.BaseServer.GetRunTime() - fr.CreateTime < 2000)
-                                return fr;
+                            if (mResources.TryGetValue(urlname, out fr))
+                            {
+                                if (Server.BaseServer.GetRunTime() - fr.CreateTime < 2000)
+                                    return fr;
+                            }
                         }
                     }
+                    bool nogzip = !(Server.Options.NoGzipFiles.IndexOf(ext) >= 0);
+                    bool cachefile = Server.Options.CacheFiles.IndexOf(ext) >= 0;
                     if (Debug)
                     {
-                        fr = new NoGzipResource(file, urlname);
+                        fr = new NoCacheResource(file, urlname);
+                        if (nogzip)
+                            fr.GZIP = true;
                     }
                     else
                     {
-                        if ("jpg;jpeg;png;gif;png;ico".IndexOf(ext) >= 0)
-                        {
-                            fr = new NoGzipResource(file, urlname);
-                        }
-                        else
+                        FileInfo info = new FileInfo(file);
+                        if (cachefile && info.Length < 1024 * Server.Options.CacheFileSize)
                         {
                             fr = new FileResource(file, urlname);
                         }
+                        else
+                        {
+                            fr = new NoCacheResource(file, urlname);
+                            if (nogzip)
+                                fr.GZIP = true;
+                        }
                     }
-                    mResources[urlname] = fr;
-                    fr.CreateTime = Server.BaseServer.GetRunTime();
+
                     fr.Load();
-                    Server.BaseServer.Log(EventArgs.LogType.Info, null, "load static resource " + urlname);
+                    fr.CreateTime = Server.BaseServer.GetRunTime();
+                    if (cache && mResources.Count < 5000)
+                    {
+                        mResources[urlname] = fr;
+                    }
+                    if (Server.EnableLog(EventArgs.LogType.Info))
+                        Server.BaseServer.Log(EventArgs.LogType.Info, null, "update {0} static resource success", urlname);
                     return fr;
                 }
             }
             catch (Exception e_)
             {
-                Server.BaseServer.Error(e_, null, "load " + file + " resource error");
+                Server.BaseServer.Error(e_, null, "update {0} resource error {1}", file, e_.Message);
             }
             return null;
         }
@@ -357,10 +493,14 @@ namespace BeetleX.FastHttpApi.StaticResurce
             }
             foreach (string file in System.IO.Directory.GetFiles(path))
             {
-                CreateResource(file);
+                CreateResource(file, true);
             }
             foreach (string folder in System.IO.Directory.GetDirectories(path))
             {
+                string vfolder = folder.Replace(Server.Options.StaticResourcePath, "")
+                    .Replace(System.IO.Path.DirectorySeparatorChar.ToString(), @"\");
+                if (Server.Options.NotLoadFolder.IndexOf(vfolder, 0, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                    continue;
                 LoadFolder(folder);
             }
         }

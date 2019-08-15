@@ -1,143 +1,133 @@
 ﻿using BeetleX.Buffers;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace BeetleX.FastHttpApi
 {
-    public class HttpResponse
+    public class HttpResponse : IDataResponse
     {
 
-        public HttpResponse(IBodySerializer formater)
+        public HttpResponse()
         {
             Header = new Header();
-            Header[HeaderType.SERVER] = "BeetleX-Fast-HttpServer";
-            if (formater != null)
-            {
-                Header[HeaderType.CONTENT_TYPE] = formater.ContentType;
-                Serializer = formater;
-            }
             AsyncResult = false;
-
         }
 
-        private string mCode = "200";
+        internal Newtonsoft.Json.JsonSerializer JsonSerializer { get; set; }
 
-        private string mCodeMsg = "OK";
+        internal StreamWriter StreamWriter { get; set; }
+
+        internal Newtonsoft.Json.JsonTextWriter JsonWriter { get; set; }
+
+        private int mCompletedStatus = 0;
 
         private List<string> mSetCookies = new List<string>();
 
         private object mBody;
 
-        public string Code { get { return mCode; } }
+        public string Code { get; set; } = "200";
 
-        public string CodeMsg { get { return mCodeMsg; } }
+        public string CodeMsg { get; set; } = "OK";
 
-        public Header Header { get; set; }
-
-        public IBodySerializer Serializer { get; set; }
+        public Header Header { get; internal set; }
 
         internal ISession Session { get; set; }
 
         public HttpRequest Request { get; internal set; }
 
+        public string RequestID { get; set; }
+
         internal bool AsyncResult { get; set; }
+
+        private byte[] mLengthBuffer = new byte[10];
+
+        internal void Reset()
+        {
+            AsyncResult = false;
+            Header.Clear();
+            mSetCookies.Clear();
+            //Header = new Header();
+            //mSetCookies = new List<string>();
+            mCompletedStatus = 0;
+            mBody = null;
+            Code = "200";
+            CodeMsg = "OK";
+        }
 
         public void Async()
         {
             AsyncResult = true;
         }
 
-        public void InnerError(Exception e, bool outputStackTrace)
+        public void SetCookie(string name, string value, string path, DateTime? expires = null)
         {
-            mCode = "500";
-            mCodeMsg = "Internal Server Error";
-            Completed(Serializer.GetInnerError(e, this, outputStackTrace));
+            SetCookie(name, value, path, null, expires);
         }
 
         public void SetCookie(string name, string value, DateTime? expires = null)
         {
-            SetCookie(name, value, "/", expires);
+            SetCookie(name, value, "/", null, expires);
         }
 
-        public void SetCookie(string name, string value, string path, DateTime? expires = null)
+        public void SetCookie(string name, string value, string path, string domain, DateTime? expires = null)
         {
-            string cookie;
             if (string.IsNullOrEmpty(name))
                 return;
             name = System.Web.HttpUtility.UrlEncode(name);
             value = System.Web.HttpUtility.UrlEncode(value);
-            if (expires == null)
+            StringBuilder sb = new StringBuilder();
+            sb.Append(name).Append("=").Append(value);
+
+            if (!string.IsNullOrEmpty(path))
             {
-                cookie = string.Format("{0}={1};path={2}", name, value, path);
+                sb.Append(";Path=").Append(path);
             }
-            else
+            if (!string.IsNullOrEmpty(domain))
             {
-                cookie = string.Format("{0}={1};path={2};expires={3}", name, value, path, expires.Value.ToString("r"));
+                sb.Append(";Domain=").Append(domain);
             }
-            mSetCookies.Add(cookie);
+            if (expires != null)
+            {
+                sb.Append(";Expires=").Append(expires.Value.ToString("r"));
+            }
+
+            sb.Append(";HttpOnly");
+            mSetCookies.Add(sb.ToString());
         }
 
-        public void NotFound()
-        {
-            mCode = "404";
-            mCodeMsg = "Not found";
-            Completed(Serializer.GetNotFoundData(this));
-        }
-
-        public void NoModify()
-        {
-            mCode = "304";
-            mCodeMsg = "Not Modified";
-            Completed(null);
-        }
-
-        public void NotSupport()
-        {
-            mCode = "403";
-            mCodeMsg = Request.Method + " method type not support!";
-            Completed(Serializer.GetNotSupport(this));
-        }
-
-        public void ConnectionUpgradeWebsocket(string websocketkey)
-        {
-            mCode = "101";
-            mCodeMsg = "Switching Protocols";
-            Header.Add(HeaderType.CONNECTION, "Upgrade");
-            Header.Add(HeaderType.UPGRADE, "websocket");
-            Header.Add(HeaderType.SEC_WEBSOCKET_VERSION, "13");
-            SHA1 sha1 = new SHA1CryptoServiceProvider();
-            byte[] bytes_sha1_in = Encoding.UTF8.GetBytes(websocketkey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-            byte[] bytes_sha1_out = sha1.ComputeHash(bytes_sha1_in);
-            string str_sha1_out = Convert.ToBase64String(bytes_sha1_out);
-            Header.Add(HeaderType.SEC_WEBSOCKT_ACCEPT, str_sha1_out);
-        }
         public void Result(object data)
         {
             if (data is StaticResurce.FileBlock)
             {
                 Completed(data);
             }
+            else if (data is IResult)
+            {
+                Completed(data);
+            }
             else
             {
-                ActionResult result = data as ActionResult;
-                if (result == null)
+                ActionResult actionResult = data as ActionResult;
+                IResult result;
+                if (actionResult == null)
                 {
-                    result = new ActionResult();
-                    result.Data = data;
+                    actionResult = new ActionResult(data);
+                    actionResult.Url = Request.BaseUrl;
+                    actionResult.ID = RequestID;
                 }
-                result.Url = this.Request.BaseUrl;
+                result = new JsonResult(actionResult);
                 Completed(result);
             }
         }
 
-        public void Result()
+        internal void Result()
         {
             Completed(null);
         }
 
-        private int mCompletedStatus = 0;
 
         private void Completed(object data)
         {
@@ -150,59 +140,152 @@ namespace BeetleX.FastHttpApi
 
         public void SetContentType(string type)
         {
-            Header[HeaderType.CONTENT_TYPE] = type;
-        }
-
-        public void SetETag(string id)
-        {
-
+            Header[HeaderTypeFactory.CONTENT_TYPE] = type;
         }
 
         public string HttpVersion { get; set; }
 
         public void SetStatus(string code, string msg)
         {
-            mCode = code;
-            mCodeMsg = msg;
+            Code = code;
+            CodeMsg = msg;
         }
 
-        internal void Write(PipeStream stream)
+
+        private byte[] GetLengthBuffer(string length)
         {
-            stream.Write(HttpVersion);
-            stream.Write(HeaderType.SPACE_BYTES[0]);
-            stream.Write(mCode);
-            stream.Write(HeaderType.SPACE_BYTES[0]);
-            stream.Write(CodeMsg);
-            stream.Write(HeaderType.LINE_BYTES);
+            Encoding.ASCII.GetBytes(length, 0, length.Length, mLengthBuffer, 0);
+            for(int i=length.Length;i<10;i++)
+            {
+                mLengthBuffer[i] = 32;
+            }
+            return mLengthBuffer;
+        }
+
+        private void OnWrite(PipeStream stream)
+        {
+            IResult result = mBody as IResult;
+            if (result != null)
+            {
+                result.Setting(this);
+            }
+            byte[] buffer = HttpParse.GetByteBuffer();
+            int hlen = 0;
+            hlen = hlen + Encoding.ASCII.GetBytes(HttpVersion, 0, HttpVersion.Length, buffer, hlen);
+            buffer[hlen] = HeaderTypeFactory._SPACE_BYTE;
+            hlen++;
+            hlen = hlen + Encoding.ASCII.GetBytes(Code, 0, Code.Length, buffer, hlen);
+            buffer[hlen] = HeaderTypeFactory._SPACE_BYTE;
+            hlen++;
+            hlen = hlen + Encoding.ASCII.GetBytes(CodeMsg, 0, CodeMsg.Length, buffer, hlen);
+
+            buffer[hlen] = HeaderTypeFactory._LINE_R;
+            hlen++;
+            buffer[hlen] = HeaderTypeFactory._LINE_N;
+            hlen++;
+
+            stream.Write(buffer, 0, hlen);
+            stream.Write(HeaderTypeFactory.SERVAR_HEADER_BYTES, 0, HeaderTypeFactory.SERVAR_HEADER_BYTES.Length);
             Header.Write(stream);
+            if (result != null)
+            {
+                result.ContentType.Write(stream);
+            }
+            var datebuffer = GMTDate.Default.DATE;
+
+            stream.Write(datebuffer.Array, 0, datebuffer.Count);
+
             for (int i = 0; i < mSetCookies.Count; i++)
             {
-                HeaderType.Write(HeaderType.SET_COOKIE, stream);
+                HeaderTypeFactory.Write(HeaderTypeFactory.SET_COOKIE, stream);
                 stream.Write(mSetCookies[i]);
-                stream.Write(HeaderType.LINE_BYTES);
+                stream.Write(HeaderTypeFactory.LINE_BYTES, 0, 2);
             }
             if (mBody != null)
             {
-                StaticResurce.FileBlock fb = mBody as StaticResurce.FileBlock;
-                if (fb != null)
+
+                if (mBody is IDataResponse dataResponse)
                 {
-                    stream.Write(HeaderType.LINE_BYTES);
-                    fb.Write(stream);
+                    stream.Write(HeaderTypeFactory.LINE_BYTES, 0, 2);
+                    dataResponse.Write(stream);
                 }
                 else
                 {
-                    MemoryBlockCollection contentLength = stream.Allocate(28);
-                    stream.Write(HeaderType.LINE_BYTES);
-                    int count = Serializer.Serialize(stream, mBody);
-                    contentLength.Full("Content-Length: " + count.ToString().PadRight(10) + "\r\n", stream.Encoding);
+                    if (result.HasBody)
+                    {
+                        if (result.Length > 0)
+                        {
+                            stream.Write(HeaderTypeFactory.CONTENT_LENGTH_BYTES, 0, HeaderTypeFactory.CONTENT_LENGTH_BYTES.Length);
+                            stream.Write(result.Length.ToString());
+                            stream.Write(HeaderTypeFactory.TOW_LINE_BYTES, 0, 4);
+                            result.Write(stream, this);
+                        }
+                        else
+                        {
+                            stream.Write(HeaderTypeFactory.CONTENT_LENGTH_BYTES, 0, HeaderTypeFactory.CONTENT_LENGTH_BYTES.Length);
+                            MemoryBlockCollection contentLength = stream.Allocate(10);
+                            stream.Write(HeaderTypeFactory.TOW_LINE_BYTES, 0, 4);
+                            int len = stream.CacheLength;
+                            result.Write(stream, this);
+                            int count = stream.CacheLength - len;
+                            // contentLength.Full(count.ToString().PadRight(10), stream.Encoding);
+                            contentLength.Full(GetLengthBuffer(count.ToString()));
+                        }
+
+                    }
+                    else
+                    {
+                        stream.Write(HeaderTypeFactory.NULL_CONTENT_LENGTH_BYTES, 0, HeaderTypeFactory.NULL_CONTENT_LENGTH_BYTES.Length);
+                        stream.Write(HeaderTypeFactory.LINE_BYTES, 0, 2);
+                    }
                 }
             }
             else
             {
-                stream.Write(HeaderType.NULL_CONTENT_LENGTH_BYTES);
-                stream.Write(HeaderType.LINE_BYTES);
+                stream.Write(HeaderTypeFactory.NULL_CONTENT_LENGTH_BYTES, 0, HeaderTypeFactory.NULL_CONTENT_LENGTH_BYTES.Length);
+                stream.Write(HeaderTypeFactory.LINE_BYTES, 0, 2);
             }
 
+            if (Session.Server.EnableLog(EventArgs.LogType.Debug))
+                Session.Server.Log(EventArgs.LogType.Debug, Session, "{0} {1}", Request.RemoteIPAddress, this.ToString());
+
+            if (Session.Server.EnableLog(EventArgs.LogType.Info))
+            {
+                Session.Server.Log(EventArgs.LogType.Info, Session, "{4} {0} {1} response {2} {3}", Request.Method, Request.Url, Code, CodeMsg, Request.RemoteIPAddress);
+            }
+        }
+
+        void IDataResponse.Write(PipeStream stream)
+        {
+            try
+            {
+                OnWrite(stream);
+            }
+            catch (Exception e_)
+            {
+                HttpApiServer server = Request.Server;
+                if (server.EnableLog(EventArgs.LogType.Error))
+                {
+                    server.Log(EventArgs.LogType.Error, $"{Request.RemoteIPAddress} {Request.Method} {Request.Url} response write data error {e_.Message}@{e_.StackTrace}");
+                    Request.Session.Dispose();
+                }
+            }
+            finally
+            {
+                Request.Recovery();
+            }
+        }
+
+        public override string ToString()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(Request.Method + " " + Request.Url + " response " + Code + " " + CodeMsg);
+            sb.Append(this.Header.ToString());
+            for (int i = 0; i < mSetCookies.Count; i++)
+            {
+                sb.AppendLine(mSetCookies[i]);
+            }
+            return sb.ToString();
         }
 
     }

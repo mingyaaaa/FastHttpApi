@@ -6,7 +6,6 @@ using System.Text;
 namespace HttpApiServer.Filters
 {
     [Controller]
-    [NotFoundFilter]
     public class ControllerTest
     {
         //  /hello?name=
@@ -22,11 +21,14 @@ namespace HttpApiServer.Filters
             return string.Format("{0}+{1}={2}", a, b, a + b);
         }
         // /post?name=
-        public object Post(string name, [BodyParameter] UserInfo data)
+        [Post]
+        public object Post(string name, UserInfo data)
         {
             return data;
         }
         // /listcustomer?count
+        [SkipFilter(typeof(NotFoundFilter))]
+        [CustomFilter]
         public IList<Customer> ListCustomer(int count)
         {
             return Customer.List(count);
@@ -37,39 +39,72 @@ namespace HttpApiServer.Filters
             return Employee.List(count);
         }
         // post /AddEmployee 
-        public Employee AddEmployee([BodyParameter]Employee item)
+        [Post]
+        public Employee AddEmployee(Employee item)
         {
             return item;
+        }
+        [CatchException]
+        public void Throw()
+        {
+            throw new Exception("hello");
         }
     }
 
     public class GlobalFilter : FilterAttribute
     {
-        public override void Execute(ActionContext context)
+        public override bool Executing(ActionContext context)
         {
-            Console.WriteLine(DateTime.Now + " globalFilter execting...");
-            context.Execute();
-            Console.WriteLine(DateTime.Now + " globalFilter executed");
+            Console.WriteLine($"{DateTime.Now} {context.HttpContext.Request.Url} globalFilter execting...");
+            return base.Executing(context);
+        }
+        public override void Executed(ActionContext context)
+        {
+            base.Executed(context);
+            Console.WriteLine($"{DateTime.Now} {context.HttpContext.Request.Url} globalFilter executed");
         }
     }
 
     public class NotFoundFilter : FilterAttribute
     {
-        public override void Execute(ActionContext context)
+        public override bool Executing(ActionContext context)
         {
             Console.WriteLine(DateTime.Now + " NotFoundFilter execting...");
-            context.DataContext.Response.NotFound();
-            Console.WriteLine(DateTime.Now + " NotFoundFilter executed");
+            NotFoundResult notFound = new NotFoundResult("not found");
+            context.Result = notFound;
+            return false;
         }
+        public override void Executed(ActionContext context)
+        {
+            base.Executed(context);
+        }
+
     }
 
     public class CustomFilter : FilterAttribute
     {
-        public override void Execute(ActionContext context)
+        public override bool Executing(ActionContext context)
         {
             Console.WriteLine(DateTime.Now + " CustomFilter execting...");
-            context.Execute();
+            return base.Executing(context);
+        }
+        public override void Executed(ActionContext context)
+        {
             Console.WriteLine(DateTime.Now + " CustomFilter executed");
+            base.Executed(context);
+        }
+    }
+
+    public class CatchException : FilterAttribute
+    {
+        public override void Executed(ActionContext context)
+        {
+            base.Executed(context);
+            if (context.Exception != null)
+            {
+                context.Result = new TextResult(context.Exception.Message);
+                context.Exception = null;
+            }
         }
     }
 
